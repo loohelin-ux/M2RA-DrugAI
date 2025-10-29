@@ -17,7 +17,24 @@ M2RA-DrugAI 是一个基于PyTorch和PyTorch Geometric构建的开源软件包�
 仓库结构
 M2RA-DrugAI/ ├── m2ra_drugai/ │ ├── data/ │ │ └── builder.py # RAG图构建核心逻辑 │ ├── models/ │ │ └── m2ra_gnn.py # M²RA-GNN模型定义 │ └── optimizer/ │ └── hierarchical_bo.py # 双重闭环优化器 ├── examples/ │ └── quick_start.py ├── THEORY.md └── README.md
 
+## 安装指南
+### 环境要求
+- Python 3.8+
+- PyTorch 2.0+
+- PyTorch Geometric 2.3.0+（需匹配PyTorch版本）
+- 其他依赖：rdkit-pypi（分子处理）、scikit-learn（评估指标）、botorch（贝叶斯优化）
 
+### 快速安装
+```bash
+# 克隆仓库
+git clone https://github.com/loohelin-ux/M2RA-DrugAI.git
+cd M2RA-DrugAI
+
+# 安装依赖
+pip install -r requirements.txt  # 需提前创建requirements.txt，列出上述依赖
+
+# 安装包
+pip install -e .  # 可编辑模式，方便开发
 ## 如何引用
 如果您的研究工作使用了本软件包，请引用我们的项目：
 ```bibtex
