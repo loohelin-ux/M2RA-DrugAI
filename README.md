@@ -272,7 +272,7 @@ for i, exp in enumerate(best\_experiments):
 
 1. 在 GitHub 仓库的 "Issues" 中提问（点击仓库页面的 "Issues" → "New issue"）
 
-2. 发送邮件至：loohelin@example.com（替换为你的邮箱）
+2. 发送邮件至：loohelin@gmail.com（替换为你的邮箱）
 
 ## 贡献代码
 
