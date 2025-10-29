@@ -1,18 +1,18 @@
-# Configuration for a sample training run of the M²RA-GNN model.
-# This file defines hyperparameters and data paths for a reproducible experiment.
+# M²RA-GNN 模型训练运行配置示例
+# 本文件定义了可复现实验所需的超参数和数据路径
 
 run_name: "preliminary_test_run_35_precursors"
 
 data:
-  # Path to the processed RAG data objects
+  # 已处理的RAG数据对象路径
   processed_data_path: "../data/processed/initial_dataset.pt"
-  # Splitting ratios for the dataset
+  # 数据集划分比例
   train_split: 0.8
   val_split: 0.1
   test_split: 0.1
 
 model:
-  # M²RA-GNN architecture parameters
+  # M²RA-GNN 模型架构参数
   type: "M2RAGNN"
   hidden_channels: 128
   num_gnn_layers: 4
@@ -20,19 +20,19 @@ model:
   use_3d_coords: True
 
 training:
-  # Training hyperparameters
+  # 训练超参数
   optimizer: "AdamW"
   learning_rate: 0.001
   weight_decay: 0.01
   batch_size: 8
   epochs: 200
-  # Loss function weights for multi-task learning
+  # 多任务学习的损失函数权重
   loss_weights:
     yield: 0.5
     activity_ic50: 0.5
 
-# Active learning loop settings (for later stages)
+# 主动学习循环设置 (用于项目后期)
 active_learning:
   enabled: False
-  acquisition_function: "EHVI" # Expected Hypervolume Improvement
+  acquisition_function: "EHVI" # 预期超体积提升
   num_suggestions_per_loop: 5
