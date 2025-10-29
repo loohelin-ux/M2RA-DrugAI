@@ -1,56 +1,48 @@
-M2RA-DrugAI Data Schema: Reaction-Activity Graph (RAG)
-This document specifies the data structure for the Reaction-Activity Graph (RAG), which is the central data object used by the M²RA-GNN model. It is based on the torch_geometric.HeteroData format.
+# M2RA-DrugAI 数据方案：反应-活性图 (RAG)
 
-Node Types and Features
-1. precursor_molecule
-Description: Represents the 3-alkenyl-2,3'-bisindole precursor molecule.
+本文档详细说明了“反应-活性图 (RAG)”的数据结构规范。该结构是 M²RA-GNN 模型所使用的核心数据对象，基于 `torch_geometric.HeteroData` 格式进行设计。
 
-Node Features (x): A tensor of size [num_atoms, 32]. Each row is an atom, with features including:
+## 节点类型与特征
 
-One-hot encoding of atom type (C, N, O, S, Halogen).
+### 1. `precursor_molecule` (前体分子)
 
-Atom degree, formal charge, hybridization.
+-   **描述**: 代表 3-烯基-2,3'-双吲哚前体分子。
+-   **节点特征 (`x`)**: 形状为 `[原子数量, 32]` 的张量。每一行代表一个原子，其特征包含：
+    -   原子类型 (C, N, O, S, 卤素等) 的独热编码 (One-hot encoding)。
+    -   原子的度、形式电荷、杂化类型。
+    -   是否为芳香环成员的标志位。
+-   **三维坐标 (`pos`)**: 形状为 `[原子数量, 3]` 的张量，代表由RDKit计算出的原子(x, y, z)坐标。
 
-Aromaticity flag.
+### 2. `product_molecule` (产物分子)
 
-3D Coordinates (pos): A tensor of size [num_atoms, 3] for the atom's (x, y, z) coordinates, obtained from RDKit embedding.
+-   **描述**: 代表最终的 Racemosin B 类似物产物分子。
+-   **特征**: 与 `precursor_molecule` 结构相同。
 
-2. product_molecule
-Description: Represents the final Racemosin B analogue product molecule.
+### 3. `reaction_condition` (反应条件)
 
-Features: Same structure as precursor_molecule.
+-   **描述**: 代表光化学环化反应综合条件的单一节点。
+-   **节点特征 (`x`)**: 形状为 `[1, 2]` 的张量。该向量包含：
+    -   归一化后的反应温度。
+    -   归一化后的反应时间。
+    -   溶剂 (如 ACN, DCM, 氯仿) 的独热编码。
+    -   光敏剂 (如 I₂) 的独热编码。
+    -   归一化后的光敏剂浓度。
 
-3. reaction_condition
-Description: A single node representing the combined conditions for the photochemical cyclization.
+## 边类型 (关系)
 
-Node Features (x): A tensor of size [1, 2]. The vector includes:
+### 1. `('precursor_molecule', 'reacts_to', 'product_molecule')`
 
-Normalized reaction temperature.
+-   **描述**: 代表化学转化过程本身。
+-   **边属性 (`edge_attr`)**: 形状为 `[1, 1]` 的张量，包含真实的反应产率 (0到1之间的值)。
 
-Normalized reaction time.
+### 2. `('reaction_condition', 'controls', 'precursor_molecule')`
 
-One-hot encoding of the solvent (e.g., ACN, DCM, Chloroform).
+-   **描述**: 将反应条件与其作用的前体分子连接起来。
+-   **边属性**: 无。通过边的存在来表达此关系。
 
-One-hot encoding of the photosensitizer (e.g., I₂).
+### 3. `('product_molecule', 'exhibits', 'activity_target')`
 
-Normalized sensitizer concentration.
-
-Edge Types (Relations)
-1. ('precursor_molecule', 'reacts_to', 'product_molecule')
-Description: Represents the chemical transformation itself.
-
-Edge Attributes (edge_attr): A tensor of size [1, 1] containing the ground-truth reaction yield (a value between 0 and 1).
-
-2. ('reaction_condition', 'controls', 'precursor_molecule')
-Description: Links the reaction conditions to the precursor it acts upon.
-
-Edge Attributes: None. The relationship is captured by the existence of the edge.
-
-3. ('product_molecule', 'exhibits', 'activity_target')
-Description: Links the final product to its measured biological activity.
-
-Edge Attributes (edge_attr): A tensor of size [1, 3] containing:
-
-Ground-truth IC₅₀ value (log-transformed and normalized).
-
-Ground-truth autophagy inhibition rate (normalized).
+-   **描述**: 将最终产物与其测得的生物活性连接起来。
+-   **边属性 (`edge_attr`)**: 形状为 `[1, 3]` 的张量，包含：
+    -   真实的IC₅₀值 (经过对数转换和归一化)。
+    -   真实的自噬抑制率 (经过归一化)。
