@@ -1,0 +1,5 @@
+id,smiles,type
+0,CCO,precursor
+1,CC(=O)O,product
+2,CN,precursor
+3,CCN,product
