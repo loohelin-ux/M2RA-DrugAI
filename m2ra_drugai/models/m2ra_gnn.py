@@ -1,54 +1,79 @@
-"""多模态反应-活性图神经网络（M²RA-GNN）"""
+"""
+M²RA-GNN (Multi-Modal Reaction-Activity Graph Neural Network) Model Definition.
+"""
+
 import torch
-import torch.nn as nn
-import torch_geometric.nn as pyg_nn
+import torch.nn.functional as F
+from torch_geometric.nn import HeteroConv, GATConv, Linear
+from torch_geometric.data import HeteroData
 
-class EQGATLayer(pyg_nn.MessagePassing):
-    """3D几何感知等变图注意力层"""
-    def __init__(self, hidden_dim):
-        super().__init__(aggr="add")
-        self.att = nn.Sequential(
-            nn.Linear(2 * hidden_dim + 3, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1)
-        )
-        self.update = nn.Linear(hidden_dim, hidden_dim)
-
-    def forward(self, x, pos, edge_index):
-        return self.propagate(edge_index, x=x, pos=pos)
-
-    def message(self, x_i, x_j, pos_i, pos_j):
-        dist = pos_i - pos_j
-        att_score = self.att(torch.cat([x_i, x_j, dist], dim=1))
-        att_score = torch.softmax(att_score, dim=0)
-        return x_j * att_score
-
-    def update(self, aggr_out):
-        return self.update(aggr_out)
-
-class M2RAGNN(nn.Module):
-    def __init__(self, node_feat_dim=64, edge_feat_dim=32, hidden_dim=128, num_relation_types=3):
+class EQGATLayer(torch.nn.Module):
+    """等变图注意力层（处理分子3D几何信息）"""
+    def __init__(self, in_dim, out_dim, heads=4):
         super().__init__()
-        self.node_encoder = nn.Linear(node_feat_dim, hidden_dim)
-        self.edge_encoder = nn.Linear(edge_feat_dim, hidden_dim)
-        self.relational_conv = nn.ModuleList([
-            pyg_nn.GATConv(hidden_dim, hidden_dim) for _ in range(num_relation_types)
-        ])
-        self.eqgat = EQGATLayer(hidden_dim)
-        self.yield_head = nn.Sequential(nn.Linear(hidden_dim, 64), nn.ReLU(), nn.Linear(64, 1))
-        self.activity_head = nn.Sequential(nn.Linear(hidden_dim, 64), nn.ReLU(), nn.Linear(64, 1))
+        self.gat = GATConv(in_dim, out_dim // heads, heads=heads)
+        self.linear = Linear(out_dim, out_dim)
 
-    def forward(self, rag_data):
-        # 分子3D特征处理
-        mol_feats = self.node_encoder(rag_data["molecule"].x)
-        pos = torch.randn_like(mol_feats[:, :3])  # 模拟3D坐标
-        mol_feats = self.eqgat(mol_feats, pos, torch.tensor([[0,1],[1,0]]).long())
+    def forward(self, x, edge_index, pos):
+        """
+        x: 节点特征
+        pos: 节点3D坐标（用于几何信息编码）
+        """
+        # 融合几何信息（位置差的L2范数）
+        row, col = edge_index
+        pos_diff = pos[row] - pos[col]
+        geo_feat = torch.norm(pos_diff, dim=-1, keepdim=True)  # 边的几何特征
+        x = x + 0.1 * geo_feat.mean(dim=0)  # 简化的几何信息融合
+        
+        # GAT注意力传播
+        x = self.gat(x, edge_index)
+        return self.linear(x)
 
-        # 异构消息传递
-        reaction_feats = self.node_encoder(rag_data["reaction"].x)
-        target_feats = self.node_encoder(rag_data["target"].x)
+class M2RAGNN(torch.nn.Module):
+    def __init__(self, node_feature_dim, edge_type_num, hidden_dim, eqgat_head_num=4):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        
+        # 节点特征投影（统一不同类型节点的特征维度）
+        self.node_proj = Linear(node_feature_dim, hidden_dim)
+        
+        # 异构消息传递层（针对不同边类型）
+        self.hetero_conv1 = HeteroConv({
+            "chemical_transformation": GATConv(hidden_dim, hidden_dim // 2, heads=2),
+            "condition_modulation": GATConv(hidden_dim, hidden_dim // 2, heads=2),
+            "molecule_target": EQGATLayer(hidden_dim, hidden_dim, heads=eqgat_head_num)
+        }, aggr="sum")
+        
+        self.hetero_conv2 = HeteroConv({
+            "chemical_transformation": GATConv(hidden_dim, hidden_dim // 2, heads=2),
+            "condition_modulation": GATConv(hidden_dim, hidden_dim // 2, heads=2),
+            "molecule_target": EQGATLayer(hidden_dim, hidden_dim, heads=eqgat_head_num)
+        }, aggr="sum")
+        
+        # 多任务预测头
+        self.yield_head = Linear(hidden_dim, 1)  # 产率预测
+        self.activity_head = Linear(hidden_dim, 1)  # 活性预测
 
-        # 融合特征并预测
-        pred_yield = self.yield_head(reaction_feats).squeeze()
-        pred_activity = self.activity_head(target_feats).squeeze()
+    def forward(self, graph_data: HeteroData):
+        """
+        graph_data: 异构图数据（包含节点特征、边索引、3D坐标等）
+        """
+        # 1. 初始化节点特征
+        x_dict = {
+            node_type: self.node_proj(graph_data[node_type].x)
+            for node_type in graph_data.node_types
+        }
+        
+        # 2. 异构消息传递（带激活函数）
+        x_dict = self.hetero_conv1(x_dict, graph_data.edge_index_dict)
+        x_dict = {k: F.relu(v) for k, v in x_dict.items()}
+        
+        x_dict = self.hetero_conv2(x_dict, graph_data.edge_index_dict)
+        x_dict = {k: F.relu(v) for k, v in x_dict.items()}
+        
+        # 3. 多任务预测（取产物分子节点的特征进行预测）
+        product_features = x_dict["product"]  # 假设节点类型包含"product"
+        pred_yield = self.yield_head(product_features).squeeze()
+        pred_activity = self.activity_head(product_features).squeeze()
+        
         return {"yield": pred_yield, "activity": pred_activity}
