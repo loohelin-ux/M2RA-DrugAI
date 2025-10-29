@@ -1,0 +1,3 @@
+precursor_id,product_id,condition_id,temperature,solvent,yield
+0,1,0,80,DMSO,0.75
+2,3,1,60,ethanol,0.82
