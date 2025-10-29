@@ -1,38 +1,56 @@
-# Configuration for a sample training run of the M²RA-GNN model.
-# This file defines hyperparameters and data paths for a reproducible experiment.
+M2RA-DrugAI Data Schema: Reaction-Activity Graph (RAG)
+This document specifies the data structure for the Reaction-Activity Graph (RAG), which is the central data object used by the M²RA-GNN model. It is based on the torch_geometric.HeteroData format.
 
-run_name: "preliminary_test_run_35_precursors"
+Node Types and Features
+1. precursor_molecule
+Description: Represents the 3-alkenyl-2,3'-bisindole precursor molecule.
 
-data:
-  # Path to the processed RAG data objects
-  processed_data_path: "../data/processed/initial_dataset.pt"
-  # Splitting ratios for the dataset
-  train_split: 0.8
-  val_split: 0.1
-  test_split: 0.1
+Node Features (x): A tensor of size [num_atoms, 32]. Each row is an atom, with features including:
 
-model:
-  # M²RA-GNN architecture parameters
-  type: "M2RAGNN"
-  hidden_channels: 128
-  num_gnn_layers: 4
-  num_attention_heads: 4
-  use_3d_coords: True
+One-hot encoding of atom type (C, N, O, S, Halogen).
 
-training:
-  # Training hyperparameters
-  optimizer: "AdamW"
-  learning_rate: 0.001
-  weight_decay: 0.01
-  batch_size: 8
-  epochs: 200
-  # Loss function weights for multi-task learning
-  loss_weights:
-    yield: 0.5
-    activity_ic50: 0.5
+Atom degree, formal charge, hybridization.
 
-# Active learning loop settings (for later stages)
-active_learning:
-  enabled: False
-  acquisition_function: "EHVI" # Expected Hypervolume Improvement
-  num_suggestions_per_loop: 5
+Aromaticity flag.
+
+3D Coordinates (pos): A tensor of size [num_atoms, 3] for the atom's (x, y, z) coordinates, obtained from RDKit embedding.
+
+2. product_molecule
+Description: Represents the final Racemosin B analogue product molecule.
+
+Features: Same structure as precursor_molecule.
+
+3. reaction_condition
+Description: A single node representing the combined conditions for the photochemical cyclization.
+
+Node Features (x): A tensor of size [1, 2]. The vector includes:
+
+Normalized reaction temperature.
+
+Normalized reaction time.
+
+One-hot encoding of the solvent (e.g., ACN, DCM, Chloroform).
+
+One-hot encoding of the photosensitizer (e.g., I₂).
+
+Normalized sensitizer concentration.
+
+Edge Types (Relations)
+1. ('precursor_molecule', 'reacts_to', 'product_molecule')
+Description: Represents the chemical transformation itself.
+
+Edge Attributes (edge_attr): A tensor of size [1, 1] containing the ground-truth reaction yield (a value between 0 and 1).
+
+2. ('reaction_condition', 'controls', 'precursor_molecule')
+Description: Links the reaction conditions to the precursor it acts upon.
+
+Edge Attributes: None. The relationship is captured by the existence of the edge.
+
+3. ('product_molecule', 'exhibits', 'activity_target')
+Description: Links the final product to its measured biological activity.
+
+Edge Attributes (edge_attr): A tensor of size [1, 3] containing:
+
+Ground-truth IC₅₀ value (log-transformed and normalized).
+
+Ground-truth autophagy inhibition rate (normalized).
