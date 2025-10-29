@@ -1,83 +1,58 @@
 """
-M²RA-GNN: 实现THEORY.md中定义的边类型专属消息传递
-φ_化学转化, φ_条件调控, φ_分子-靶点作用
+分层贝叶斯优化：实现内圈（反应条件）和外圈（分子结构）优化
 """
 
-import torch
-import torch.nn.functional as F
-from torch_geometric.nn import HeteroConv, GATConv, Linear
-from torch_geometric.nn.norm import BatchNorm
+import numpy as np
+from skopt import Optimizer
+from skopt.space import Real, Categorical
 
-class EQGATLayer(torch.nn.Module):
-    """等变图注意力层（处理分子3D几何信息）"""
-    def __init__(self, in_dim, out_dim, heads=4):
-        super().__init__()
-        self.gat = GATConv(in_dim, out_dim // heads, heads=heads)
-        self.proj = Linear(out_dim, out_dim)
+class HierarchicalBO:
+    def __init__(self, model, init_data):
+        self.model = model  # M²RA-GNN模型
+        self.graph = init_data.get_graph()  # 初始RAG图
+        self.outer_bo = self._init_outer_loop()  # 外圈：分子结构优化
+        self.inner_bo = self._init_inner_loop()  # 内圈：反应条件优化
 
-    def forward(self, x, edge_index, pos):
-        # 计算边的几何特征（位置差的L2范数）
-        row, col = edge_index
-        pos_diff = pos[row] - pos[col]
-        geo_feat = torch.norm(pos_diff, dim=-1).unsqueeze(1)  # [E, 1]
-        # 融合几何信息到节点特征
-        x = x + 0.1 * geo_feat.mean(dim=0)  # 全局几何偏置
-        # GAT注意力传播
-        x = self.gat(x, edge_index)
-        return self.proj(x)
+    def _init_outer_loop(self):
+        """外圈优化：分子结构参数搜索空间"""
+        space = [
+            Integer(1, 5, name="ring_count"),  # 环数
+            Categorical(["-OH", "-NH2", "-COOH"], name="functional_group")  # 官能团
+        ]
+        return Optimizer(space, base_estimator="gp", acq_func="EI")
 
-class M2RAGNN(torch.nn.Module):
-    def __init__(self, hidden_dim=128):
-        super().__init__()
-        # 输入特征投影（适配不同节点类型的特征维度）
-        self.precursor_proj = Linear(2049, hidden_dim)  # 2048摩根指纹+1个坐标特征
-        self.product_proj = Linear(2049, hidden_dim)
-        self.condition_proj = Linear(5, hidden_dim)     # 1温度+4溶剂独热（示例）
-        self.target_proj = Linear(1, hidden_dim)
+    def _init_inner_loop(self):
+        """内圈优化：反应条件搜索空间"""
+        space = [
+            Real(20.0, 150.0, name="temperature"),  # 温度(℃)
+            Categorical(["water", "DMSO", "ethanol"], name="solvent")  # 溶剂
+        ]
+        return Optimizer(space, base_estimator="gp", acq_func="EI")
 
-        # 异构消息传递层（边类型专属φ函数）
-        self.conv1 = HeteroConv({
-            ("precursor", "chemical_transformation", "product"): GATConv(hidden_dim, hidden_dim, heads=2),
-            ("condition", "condition_modulation", "chemical_transformation"): GATConv(hidden_dim, hidden_dim, heads=2),
-            ("product", "molecule_target", "target"): EQGATLayer(hidden_dim, hidden_dim, heads=2)
-        }, aggr="sum")
+    def suggest_outer(self, n=1):
+        """推荐新分子结构（外圈）"""
+        return self.outer_bo.ask(n_points=n)
 
-        self.conv2 = HeteroConv({
-            ("precursor", "chemical_transformation", "product"): GATConv(hidden_dim, hidden_dim, heads=2),
-            ("condition", "condition_modulation", "chemical_transformation"): GATConv(hidden_dim, hidden_dim, heads=2),
-            ("product", "molecule_target", "target"): EQGATLayer(hidden_dim, hidden_dim, heads=2)
-        }, aggr="sum")
+    def suggest_inner(self, molecule, n=1):
+        """为给定分子推荐反应条件（内圈）"""
+        # 用模型预测初始化内圈BO
+        X_init = np.array([[50.0, "water"], [100.0, "DMSO"]])  # 初始条件
+        y_init = -self._evaluate(molecule, X_init)  # 负号用于最小化
+        self.inner_bo.tell(X_init.tolist(), y_init.tolist())
+        return self.inner_bo.ask(n_points=n)
 
-        # 批归一化
-        self.bn = BatchNorm(hidden_dim)
+    def _evaluate(self, molecule, conditions):
+        """评估分子-条件组合的综合分数（产率*0.6 + 活性*0.4）"""
+        # 此处简化：实际应根据分子和条件更新RAG图并调用模型预测
+        scores = []
+        for cond in conditions:
+            temp, solvent = cond
+            # 模拟模型预测（实际需替换为真实推理）
+            pred_yield = 0.7 + 0.001 * (temp - 80)  # 示例产率
+            pred_activity = 0.8 if solvent == "DMSO" else 0.6  # 示例活性
+            scores.append(0.6 * pred_yield + 0.4 * pred_activity)
+        return np.array(scores)
 
-        # 预测头
-        self.yield_head = Linear(hidden_dim, 1)
-        self.activity_head = Linear(hidden_dim, 1)
-
-    def forward(self, graph):
-        # 1. 节点特征投影
-        x_dict = {
-            "precursor": self.precursor_proj(graph["precursor"].x),
-            "product": self.product_proj(graph["product"].x),
-            "condition": self.condition_proj(graph["condition"].x),
-            "target": self.target_proj(graph["target"].x)
-        }
-
-        # 2. 异构消息传递（带激活）
-        x_dict = self.conv1(x_dict, graph.edge_index_dict)
-        x_dict = {k: self.bn(F.relu(v)) for k, v in x_dict.items()}
-        
-        x_dict = self.conv2(x_dict, graph.edge_index_dict)
-        x_dict = {k: self.bn(F.relu(v)) for k, v in x_dict.items()}
-
-        # 3. 多任务预测
-        # 产率预测（基于化学转化边的聚合特征）
-        reaction_feat = x_dict[("precursor", "chemical_transformation", "product")]
-        pred_yield = self.yield_head(reaction_feat).squeeze()
-        
-        # 活性预测（基于分子-靶点作用边的特征）
-        activity_feat = x_dict[("product", "molecule_target", "target")]
-        pred_activity = self.activity_head(activity_feat).squeeze()
-
-        return {"yield": pred_yield, "activity": pred_activity}
+    def update(self, X, y):
+        """用实验结果更新BO模型"""
+        self.outer_bo.tell(X, [-val for val in y])  # 负号转换
