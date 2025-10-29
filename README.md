@@ -20,6 +20,25 @@ The theoretical foundation has been laid out, and the software architecture is c
 
 (https://www.google.com/search?q=notebooks/01_Initial_Data_Exploration.ipynb)
 
+## 安装指南
+### 依赖项
+- PyTorch >= 2.0
+- PyTorch Geometric >= 2.3.0
+- RDKit (分子处理)
+- scikit-learn (辅助工具)
+
+### 安装方式
+```bash
+# 克隆仓库
+git clone https://github.com/loohelin-ux/M2RA-DrugAI.git
+cd M2RA-DrugAI
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 安装本包
+pip install -e .
+
 How to Cite
 If your research work uses concepts from this project, please cite:
 
