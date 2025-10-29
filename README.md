@@ -1,4 +1,3 @@
-(https://img.shields.io/badge/PyTorch-2.0+-orange.svg)](https://pytorch.org/) (https://img.shields.io/badge/Status-Prototyping-green.svg)](https://github.com/loohelin-ux/M2RA-DrugAI)
 # M2RA-DrugAI
 M2RA-DrugAI: A PyTorch Framework for Multi-Modal Reaction-Activity Drug Discovery
 (https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/get-started/locally/)
