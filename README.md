@@ -39,7 +39,7 @@ pip install -r requirements.txt
 # 安装本包
 pip install -e .
 
-How to Cite
+## How to Cite
 If your research work uses concepts from this project, please cite:
 
 @misc{Lu_M2RA-DrugAI_2025,
