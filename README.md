@@ -27,5 +27,5 @@ M2RA-DrugAI/ ├── m2ra_drugai/ │ ├── data/ │ │ └── builde
   year = {2025},
   publisher = {GitHub},
   journal = {GitHub repository},
-  howpublished = {\url{[https://github.com/your-username/M2RA-DrugAI](https://github.com/your-username/M2RA-DrugAI)}}
+  howpublished = {\url{[https://github.com/loohelin-ux/M2RA-DrugAI](https://github.com/loohelin-ux/M2RA-DrugAI)}}
 }
