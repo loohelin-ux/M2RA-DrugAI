@@ -1,7 +1,18 @@
-torch>=2.0.0
-torch_geometric>=2.3.0
-rdkit-pypi>=2023.9.4
-scikit-optimize>=0.9.0
-pandas>=1.5.3
-numpy>=1.24.3
-scipy>=1.10.1
+# Core ML/DL Frameworks
+torch==2.0.1
+torch-geometric==2.3.1
+
+# Bayesian Optimization
+botorch==0.9.3
+gpytorch==1.11
+
+# Cheminformatics & Data Handling
+rdkit-pypi==2022.09.5
+pandas==2.0.3
+numpy==1.24.3
+
+# Visualization & Utilities
+matplotlib==3.7.2
+seaborn==0.12.2
+tqdm==4.66.1
+PyYAML==6.0.1
