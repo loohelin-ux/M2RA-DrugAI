@@ -1,57 +1,85 @@
-"""反应-活性图（RAG）构建器"""
+"""
+RAG (Reaction-Activity Graph) Data Structure Builder.
+"""
+
+import pandas as pd
 import torch
 from torch_geometric.data import HeteroData
+from rdkit import Chem
 
-class RAGDataBuilder:
-    def __init__(self):
-        self.node_types = ["molecule", "reaction", "condition", "target", "activity"]
-        self.edge_types = [("molecule", "participates_in", "reaction"),
-                          ("condition", "regulates", "reaction"),
-                          ("reaction", "generates", "molecule"),
-                          ("molecule", "binds_to", "target"),
-                          ("target", "has", "activity")]
+class RAGData:
+    def __init__(self, molecule_file, reaction_file, activity_file):
+        self.molecule_file = molecule_file
+        self.reaction_file = reaction_file
+        self.activity_file = activity_file
+        
+        # 存储图数据和标签
+        self.graph = HeteroData()
+        self.yield_labels = None
+        self.activity_labels = None
 
-    def build(self, samples):
-        """
-        输入：samples = [(反应物SMILES, 产物SMILES, 反应条件dict, 靶点序列, 活性值), ...]
-        输出：HeteroData格式的RAG图
-        """
-        rag_data = HeteroData()
-        mol_smiles = []
-        reaction_info = []
-        condition_info = []
-        target_seqs = []
-        activity_values = []
+    def preprocess(self):
+        """构建RAG图的核心方法"""
+        # 1. 加载分子数据（SMILES格式）
+        molecules = pd.read_csv(self.molecule_file, header=None, names=["smiles"])
+        self._add_molecule_nodes(molecules)
+        
+        # 2. 加载反应数据（前体->产物+条件）
+        reactions = pd.read_csv(self.reaction_file)
+        self._add_reaction_edges(reactions)
+        
+        # 3. 加载活性数据（分子->靶点+活性值）
+        activities = pd.read_csv(self.activity_file)
+        self._add_activity_edges(activities)
+        
+        # 4. 初始化标签（示例：取产物分子的产率和活性）
+        self.yield_labels = torch.tensor(reactions["yield"].values, dtype=torch.float)
+        self.activity_labels = torch.tensor(activities["activity"].values, dtype=torch.float)
 
-        # 解析输入样本
-        for reactant, product, cond, target, act in samples:
-            mol_smiles.extend([reactant, product])
-            reaction_info.append(f"{reactant}→{product}")
-            condition_info.append(cond)
-            target_seqs.append(target)
-            activity_values.append(act)
+    def _add_molecule_nodes(self, molecules_df):
+        """添加分子节点（前体/产物）并提取特征"""
+        # 简化：用分子的原子数作为特征（实际应使用Morgan指纹等）
+        features = []
+        for smi in molecules_df["smiles"]:
+            mol = Chem.MolFromSmiles(smi)
+            features.append([mol.GetNumAtoms()])  # 示例特征
+        
+        self.graph["molecule"].x = torch.tensor(features, dtype=torch.float)
+        self.graph["product"].x = self.graph["molecule"].x  # 假设部分分子是产物
 
-        # 为节点分配特征
-        rag_data["molecule"].x = torch.randn(len(mol_smiles), 64)  # 分子特征（64维）
-        rag_data["reaction"].x = torch.randn(len(reaction_info), 64)  # 反应特征
-        rag_data["condition"].x = torch.randn(len(condition_info), 32)  # 条件特征
-        rag_data["target"].x = torch.randn(len(target_seqs), 64)  # 靶点特征
-        rag_data["activity"].x = torch.tensor(activity_values).unsqueeze(1).float()  # 活性值
+    def _add_reaction_edges(self, reactions_df):
+        """添加反应边（化学转化+条件调控）"""
+        # 化学转化边：前体 -> 产物
+        precursor_indices = reactions_df["precursor_id"].values
+        product_indices = reactions_df["product_id"].values
+        self.graph["molecule", "chemical_transformation", "product"].edge_index = torch.tensor([
+            precursor_indices, product_indices
+        ], dtype=torch.long)
+        
+        # 条件调控边：反应条件 -> 化学转化（简化示例）
+        self.graph["condition", "condition_modulation", "chemical_transformation"].edge_index = torch.tensor([
+            reactions_df["condition_id"].values,
+            np.arange(len(reactions_df))  # 假设每条边对应一个反应
+        ], dtype=torch.long)
 
-        # 标签（用于训练）
-        rag_data.yield_labels = torch.randn(len(reaction_info))  # 模拟产率标签
-        rag_data.activity_labels = torch.tensor(activity_values).float()  # 活性标签
+    def _add_activity_edges(self, activities_df):
+        """添加分子-靶点作用边"""
+        self.graph["product", "molecule_target", "target"].edge_index = torch.tensor([
+            activities_df["product_id"].values,
+            activities_df["target_id"].values
+        ], dtype=torch.long)
 
-        # 标记节点类型（适配模型调用）
-        rag_data.mol_node_mask = torch.ones(len(mol_smiles), dtype=torch.bool)
-        rag_data.reaction_node_mask = torch.ones(len(reaction_info), dtype=torch.bool)
-        rag_data.target_node_mask = torch.ones(len(target_seqs), dtype=torch.bool)
+    def get_graph_data(self):
+        """返回PyTorch Geometric格式的异构图数据"""
+        return self.graph
 
-        return rag_data
+    def get_search_space_samples(self):
+        """为BO提供初始搜索空间样本（简化示例）"""
+        # 实际应从反应条件和分子参数中提取
+        return np.random.rand(10, len(self.search_space))  # 10个初始样本
 
-    def get_search_space(self):
-        """返回优化搜索空间（适配BO优化器）"""
-        return {
-            "molecules": ["CCO", "CCN", "CC(=O)O", "CC(=O)N", "CC(=O)OCC"],
-            "conditions": {"temperature": (25, 80), "solvent": ["水", "乙醇", "1,4-二氧六环"]}
-        }
+    def num_nodes(self):
+        return sum(self.graph.num_nodes_dict.values())
+
+    def num_edges(self):
+        return sum(self.graph.num_edges_dict.values())
