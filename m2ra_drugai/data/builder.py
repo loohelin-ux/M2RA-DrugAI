@@ -1,4 +1,4 @@
-"""反应-活性图（RAG）构建器，对应申报书核心理论"""
+"""反应-活性图（RAG）构建器"""
 import torch
 from torch_geometric.data import HeteroData
 
@@ -31,7 +31,7 @@ class RAGDataBuilder:
             target_seqs.append(target)
             activity_values.append(act)
 
-        # 为节点分配特征（简化版，保持与申报书一致）
+        # 为节点分配特征
         rag_data["molecule"].x = torch.randn(len(mol_smiles), 64)  # 分子特征（64维）
         rag_data["reaction"].x = torch.randn(len(reaction_info), 64)  # 反应特征
         rag_data["condition"].x = torch.randn(len(condition_info), 32)  # 条件特征
